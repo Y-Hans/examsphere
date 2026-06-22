@@ -1,0 +1,22 @@
+{
+  "framework": "nextjs",
+  "regions": ["bom1"],
+  "functions": {
+    "src/app/api/v1/ai/**/*.ts": {
+      "maxDuration": 300
+    },
+    "src/modules/ai/actions/*.ts": {
+      "maxDuration": 300
+    }
+  },
+  "crons": [
+    {
+      "path": "/api/v1/cron/refresh-analytics",
+      "schedule": "0 * * * *"
+    },
+    {
+      "path": "/api/v1/cron/scheduled-tests",
+      "schedule": "*/15 * * * *"
+    }
+  ]
+}

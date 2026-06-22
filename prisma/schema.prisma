@@ -1,0 +1,798 @@
+generator client {
+  provider        = "prisma-client-js"
+}
+
+datasource db {
+  provider = "oracle"
+  url      = env("DATABASE_URL")
+  schemas  = ["EXAMSPHERE"]
+}
+
+// 1. Tenancy & Identity
+model Tenant {
+  id         String         @id @default(uuid()) @db.VarChar(36)
+  name       String         @db.VarChar(255)
+  subdomain  String         @unique @db.VarChar(100)
+  type       TenantType
+  status     TenantStatus   @default(ACTIVE)
+  branding   Json?
+  createdAt  DateTime       @default(now()) @map("created_at") @db.Timestamp(6)
+  updatedAt  DateTime       @updatedAt @map("updated_at") @db.Timestamp(6)
+  deletedAt  DateTime?      @map("deleted_at") @db.Timestamp(6)
+
+  users          User[]
+  roles          Role[]
+  questions      Question[]
+  testTemplates  TestTemplate[]
+  testSessions   TestSession[]
+  practiceSessions PracticeSession[]
+  analyticsSnapshots AnalyticsSnapshot[]
+  weakTopics     WeakTopic[]
+  doubts         Doubt[]
+  subscriptions  Subscription[]
+  notifications  Notification[]
+  batches        Batch[]
+  featureOverrides TenantFeatureOverride[]
+  usageRecords   UsageRecord[]
+
+  @@map("tenants")
+}
+
+enum TenantType {
+  INDIVIDUAL
+  INSTITUTE
+  SCHOOL
+  ENTERPRISE
+}
+
+enum TenantStatus {
+  ACTIVE
+  SUSPENDED
+  TERMINATED
+}
+
+model User {
+  id            String       @id @default(uuid()) @db.VarChar(36)
+  tenantId      String       @map("tenant_id") @db.VarChar(36)
+  email         String       @unique @db.VarChar(255)
+  passwordHash  String?      @map("password_hash") @db.VarChar(255)
+  status        UserStatus   @default(ACTIVE)
+  lastLoginAt   DateTime?    @map("last_login_at") @db.Timestamp(6)
+  createdAt     DateTime     @default(now()) @map("created_at") @db.Timestamp(6)
+  updatedAt     DateTime     @updatedAt @map("updated_at") @db.Timestamp(6)
+  deletedAt     DateTime?    @map("deleted_at") @db.Timestamp(6)
+
+  tenant            Tenant             @relation(fields: [tenantId], references: [id])
+  roles             UserRole[]
+  createdQuestions  Question[]
+  questionVersions  QuestionVersion[]
+  reviewLogs        QuestionReviewLog[]
+  testSessions      TestSession[]
+  practiceSessions  PracticeSession[]
+  analyticsSnapshots AnalyticsSnapshot[]
+  weakTopics        WeakTopic[]
+  aiConversations   AiConversation[]
+  doubts            Doubt[]
+  doubtResponses    DoubtResponse[]
+  subscriptions     Subscription[]
+  notifications     Notification[]
+  batchEnrollments  BatchEnrollment[]
+  usageRecords      UsageRecord[]
+  notificationPreferences NotificationPreference[]
+
+  @@map("users")
+}
+
+enum UserStatus {
+  ACTIVE
+  INACTIVE
+  LOCKED
+  PENDING_VERIFICATION
+}
+
+model Role {
+  id        String       @id @default(uuid()) @db.VarChar(36)
+  tenantId  String       @map("tenant_id") @db.VarChar(36)
+  name      String       @db.VarChar(100)
+  scope     String       @db.VarChar(50)
+  createdAt DateTime     @default(now()) @map("created_at") @db.Timestamp(6)
+  updatedAt DateTime     @updatedAt @map("updated_at") @db.Timestamp(6)
+  deletedAt DateTime?    @map("deleted_at") @db.Timestamp(6)
+
+  tenant      Tenant           @relation(fields: [tenantId], references: [id])
+  users       UserRole[]
+  permissions RolePermission[]
+
+  @@map("roles")
+}
+
+model Permission {
+  id          String           @id @default(uuid()) @db.VarChar(36)
+  resource    String           @db.VarChar(100)
+  action      String           @db.VarChar(100)
+  constraints Json?
+
+  roles       RolePermission[]
+
+  @@map("permissions")
+}
+
+model UserRole {
+  userId     String   @map("user_id") @db.VarChar(36)
+  roleId     String   @map("role_id") @db.VarChar(36)
+  assignedAt DateTime @default(now()) @map("assigned_at") @db.Timestamp(6)
+
+  user       User     @relation(fields: [userId], references: [id])
+  role       Role     @relation(fields: [roleId], references: [id])
+
+  @@id([userId, roleId])
+  @@map("user_roles")
+}
+
+model RolePermission {
+  roleId       String @map("role_id") @db.VarChar(36)
+  permissionId String @map("permission_id") @db.VarChar(36)
+
+  role         Role       @relation(fields: [roleId], references: [id])
+  permission   Permission @relation(fields: [permissionId], references: [id])
+
+  @@id([roleId, permissionId])
+  @@map("role_permissions")
+}
+
+// 2. Syllabus Hierarchy
+model Exam {
+  id        String   @id @default(uuid()) @db.VarChar(36)
+  code      String   @unique @db.VarChar(50)
+  name      String   @db.VarChar(100)
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamp(6)
+  updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamp(6)
+
+  subjects      Subject[]
+  questions     Question[]
+  testTemplates TestTemplate[]
+  rankPredictions RankPrediction[]
+
+  @@map("exams")
+}
+
+model Subject {
+  id        String    @id @default(uuid()) @db.VarChar(36)
+  examId    String    @map("exam_id") @db.VarChar(36)
+  name      String    @db.VarChar(100)
+  tenantId  String?   @map("tenant_id") @db.VarChar(36)
+  createdAt DateTime  @default(now()) @map("created_at") @db.Timestamp(6)
+  updatedAt DateTime  @updatedAt @map("updated_at") @db.Timestamp(6)
+  deletedAt DateTime? @map("deleted_at") @db.Timestamp(6)
+
+  exam            Exam            @relation(fields: [examId], references: [id])
+  units           Unit[]
+  questions       Question[]
+  testSections    TestSection[]
+
+  @@map("subjects")
+}
+
+model Unit {
+  id        String    @id @default(uuid()) @db.VarChar(36)
+  subjectId String    @map("subject_id") @db.VarChar(36)
+  name      String    @db.VarChar(255)
+  createdAt DateTime  @default(now()) @map("created_at") @db.Timestamp(6)
+  updatedAt DateTime  @updatedAt @map("updated_at") @db.Timestamp(6)
+  deletedAt DateTime? @map("deleted_at") @db.Timestamp(6)
+
+  subject  Subject  @relation(fields: [subjectId], references: [id])
+  chapters Chapter[]
+
+  @@map("units")
+}
+
+model Chapter {
+  id        String    @id @default(uuid()) @db.VarChar(36)
+  unitId    String    @map("unit_id") @db.VarChar(36)
+  name      String    @db.VarChar(255)
+  createdAt DateTime  @default(now()) @map("created_at") @db.Timestamp(6)
+  updatedAt DateTime  @updatedAt @map("updated_at") @db.Timestamp(6)
+  deletedAt DateTime? @map("deleted_at") @db.Timestamp(6)
+
+  unit   Unit    @relation(fields: [unitId], references: [id])
+  topics Topic[]
+
+  @@map("chapters")
+}
+
+model Topic {
+  id        String    @id @default(uuid()) @db.VarChar(36)
+  chapterId String    @map("chapter_id") @db.VarChar(36)
+  name      String    @db.VarChar(255)
+  createdAt DateTime  @default(now()) @map("created_at") @db.Timestamp(6)
+  updatedAt DateTime  @updatedAt @map("updated_at") @db.Timestamp(6)
+  deletedAt DateTime? @map("deleted_at") @db.Timestamp(6)
+
+  chapter        Chapter          @relation(fields: [chapterId], references: [id])
+  concepts       Concept[]
+  questionTopics QuestionTopic[]
+  weakTopics     WeakTopic[]
+
+  @@map("topics")
+}
+
+model Concept {
+  id        String    @id @default(uuid()) @db.VarChar(36)
+  topicId   String    @map("topic_id") @db.VarChar(36)
+  name      String    @db.VarChar(255)
+  createdAt DateTime  @default(now()) @map("created_at") @db.Timestamp(6)
+  updatedAt DateTime  @updatedAt @map("updated_at") @db.Timestamp(6)
+  deletedAt DateTime? @map("deleted_at") @db.Timestamp(6)
+
+  topic Topic @relation(fields: [topicId], references: [id])
+
+  @@map("concepts")
+}
+
+// 3. Question Bank
+model Question {
+  id             String           @id @default(uuid()) @db.VarChar(36)
+  tenantId       String           @map("tenant_id") @db.VarChar(36)
+  type           QuestionType
+  status         QuestionStatus   @default(DRAFT)
+  difficulty     Difficulty
+  sourceType     QuestionSourceType @map("source_type")
+  examId         String           @map("exam_id") @db.VarChar(36)
+  subjectId      String           @map("subject_id") @db.VarChar(36)
+  createdBy      String           @map("created_by") @db.VarChar(36)
+  currentVersion Int              @default(1) @map("current_version")
+  createdAt      DateTime         @default(now()) @map("created_at") @db.Timestamp(6)
+  updatedAt      DateTime         @updatedAt @map("updated_at") @db.Timestamp(6)
+  deletedAt      DateTime?        @map("deleted_at") @db.Timestamp(6)
+
+  tenant          Tenant            @relation(fields: [tenantId], references: [id])
+  exam            Exam              @relation(fields: [examId], references: [id])
+  subject         Subject           @relation(fields: [subjectId], references: [id])
+  creator         User              @relation(fields: [createdBy], references: [id])
+  versions        QuestionVersion[]
+  topics          QuestionTopic[]
+  tags            QuestionTag[]
+  images          QuestionImage[]
+  reviewLogs      QuestionReviewLog[]
+  sectionQuestions TestSectionQuestion[]
+  testResponses   TestResponse[]
+  practiceResponses PracticeResponse[]
+
+  @@index([tenantId, deletedAt], map: "idx_questions_tenant_deleted")
+  @@map("questions")
+}
+
+enum QuestionType {
+  SC
+  MCQ
+  NUMERICAL
+  ASSERTION
+  MATRIX
+  COMPREHENSION
+}
+
+enum QuestionStatus {
+  DRAFT
+  IN_REVIEW
+  PUBLISHED
+  ARCHIVED
+  FLAGGED
+}
+
+enum Difficulty {
+  EASY
+  MEDIUM
+  HARD
+  VERY_HARD
+}
+
+enum QuestionSourceType {
+  PYQ
+  ORIGINAL
+  INSTITUTE
+  AI
+}
+
+model QuestionVersion {
+  id              String   @id @default(uuid()) @db.VarChar(36)
+  questionId      String   @map("question_id") @db.VarChar(36)
+  versionNo       Int      @map("version_no")
+  statement       String   @db.Clob
+  optionA         String?  @map("option_a") @db.Clob
+  optionB         String?  @map("option_b") @db.Clob
+  optionC         String?  @map("option_c") @db.Clob
+  optionD         String?  @map("option_d") @db.Clob
+  correctOptions  String   @map("correct_options") @db.VarChar(100)
+  solution        String?  @db.Clob
+  hintLevel1      String?  @map("hint_level_1") @db.Clob
+  hintLevel2      String?  @map("hint_level_2") @db.Clob
+  hintLevel3      String?  @map("hint_level_3") @db.Clob
+  marksCorrect    Decimal  @map("marks_correct") @db.Decimal(5, 2)
+  marksWrong      Decimal  @default(0) @map("marks_wrong") @db.Decimal(5, 2)
+  pyqYear         Int?     @map("pyq_year")
+  pyqExamSession  String?  @map("pyq_exam_session") @db.VarChar(50)
+  pyqShift        String?  @map("pyq_shift") @db.VarChar(50)
+  estTimeSec      Int?     @map("est_time_sec")
+  language        String   @default("en") @db.VarChar(10)
+  changeSummary   String?  @map("change_summary") @db.VarChar(500)
+  createdBy       String   @map("created_by") @db.VarChar(36)
+  createdAt       DateTime @default(now()) @map("created_at") @db.Timestamp(6)
+
+  question        Question @relation(fields: [questionId], references: [id])
+  creator         User     @relation(fields: [createdBy], references: [id])
+
+  @@map("question_versions")
+}
+
+model QuestionTopic {
+  questionId String @map("question_id") @db.VarChar(36)
+  topicId    String @map("topic_id") @db.VarChar(36)
+
+  question   Question @relation(fields: [questionId], references: [id])
+  topic      Topic    @relation(fields: [topicId], references: [id])
+
+  @@id([questionId, topicId])
+  @@map("question_topics")
+}
+
+model Tag {
+  id        String       @id @default(uuid()) @db.VarChar(36)
+  name      String       @db.VarChar(100)
+  questions QuestionTag[]
+
+  @@map("tags")
+}
+
+model QuestionTag {
+  questionId String @map("question_id") @db.VarChar(36)
+  tagId      String @map("tag_id") @db.VarChar(36)
+
+  question   Question @relation(fields: [questionId], references: [id])
+  tag        Tag      @relation(fields: [tagId], references: [id])
+
+  @@id([questionId, tagId])
+  @@map("question_tags")
+}
+
+model QuestionImage {
+  id         String   @id @default(uuid()) @db.VarChar(36)
+  questionId String   @map("question_id") @db.VarChar(36)
+  url        String   @db.VarChar(1024)
+  purpose    String   @db.VarChar(50)
+  createdAt  DateTime @default(now()) @map("created_at") @db.Timestamp(6)
+
+  question   Question @relation(fields: [questionId], references: [id])
+
+  @@map("question_images")
+}
+
+model QuestionReviewLog {
+  id         String   @id @default(uuid()) @db.VarChar(36)
+  questionId String   @map("question_id") @db.VarChar(36)
+  reviewerId String   @map("reviewer_id") @db.VarChar(36)
+  action     String   @db.VarChar(50)
+  comment    String?  @db.Clob
+  createdAt  DateTime @default(now()) @map("created_at") @db.Timestamp(6)
+
+  question   Question @relation(fields: [questionId], references: [id])
+  reviewer   User     @relation(fields: [reviewerId], references: [id])
+
+  @@map("question_review_logs")
+}
+
+// 4. Exam Engine
+model TestTemplate {
+  id             String   @id @default(uuid()) @db.VarChar(36)
+  tenantId       String   @map("tenant_id") @db.VarChar(36)
+  name           String   @db.VarChar(255)
+  type           String   @db.VarChar(50)
+  examId         String   @map("exam_id") @db.VarChar(36)
+  configuration  Json?
+  durationMin    Int      @map("duration_min")
+  totalMarks     Decimal  @map("total_marks") @db.Decimal(8, 2)
+  scheduledStart DateTime? @map("scheduled_start") @db.Timestamp(6)
+  scheduledEnd   DateTime? @map("scheduled_end") @db.Timestamp(6)
+  status         String   @default("DRAFT") @db.VarChar(50)
+  createdBy      String   @map("created_by") @db.VarChar(36)
+  createdAt      DateTime @default(now()) @map("created_at") @db.Timestamp(6)
+  updatedAt      DateTime @updatedAt @map("updated_at") @db.Timestamp(6)
+  deletedAt      DateTime? @map("deleted_at") @db.Timestamp(6)
+
+  tenant    Tenant        @relation(fields: [tenantId], references: [id])
+  exam      Exam          @relation(fields: [examId], references: [id])
+  creator   User          @relation(fields: [createdBy], references: [id])
+  sections  TestSection[]
+  sessions  TestSession[]
+
+  @@map("test_templates")
+}
+
+model TestSection {
+  id             String   @id @default(uuid()) @db.VarChar(36)
+  templateId     String   @map("template_id") @db.VarChar(36)
+  subjectId      String   @map("subject_id") @db.VarChar(36)
+  name           String   @db.VarChar(100)
+  questionCount  Int      @map("question_count")
+  marksCorrect   Decimal  @map("marks_correct") @db.Decimal(5, 2)
+  marksWrong     Decimal  @default(0) @map("marks_wrong") @db.Decimal(5, 2)
+  durationMin    Int?     @map("duration_min")
+  orderNo        Int      @map("order_no")
+
+  template       TestTemplate         @relation(fields: [templateId], references: [id])
+  subject        Subject              @relation(fields: [subjectId], references: [id])
+  questions      TestSectionQuestion[]
+  responses      TestResponse[]
+
+  @@map("test_sections")
+}
+
+model TestSectionQuestion {
+  sectionId  String @map("section_id") @db.VarChar(36)
+  questionId String @map("question_id") @db.VarChar(36)
+  orderNo    Int    @map("order_no")
+
+  section    TestSection @relation(fields: [sectionId], references: [id])
+  question   Question    @relation(fields: [questionId], references: [id])
+
+  @@id([sectionId, questionId])
+  @@map("test_section_questions")
+}
+
+model TestSession {
+  id                  String   @id @default(uuid()) @db.VarChar(36)
+  templateId          String   @map("template_id") @db.VarChar(36)
+  userId              String   @map("user_id") @db.VarChar(36)
+  tenantId            String   @map("tenant_id") @db.VarChar(36)
+  status              String   @default("NOT_STARTED") @db.VarChar(50)
+  startedAt           DateTime? @map("started_at") @db.Timestamp(6)
+  submittedAt         DateTime? @map("submitted_at") @db.Timestamp(6)
+  timeSpentSec        Int?     @map("time_spent_sec")
+  totalScore          Decimal? @map("total_score") @db.Decimal(8, 2)
+  rankEstimate        Int?     @map("rank_estimate")
+  percentileEstimate  Decimal? @map("percentile_estimate") @db.Decimal(5, 2)
+  deviceInfo          Json?    @map("device_info")
+  ipAddress           String?  @map("ip_address") @db.VarChar(45)
+  userAgent           String?  @map("user_agent") @db.VarChar(500)
+  fullscreenViolations Int     @default(0) @map("fullscreen_violations")
+  tabSwitches         Int      @default(0) @map("tab_switches")
+  windowBlurs         Int      @default(0) @map("window_blurs")
+  createdAt           DateTime @default(now()) @map("created_at") @db.Timestamp(6)
+  updatedAt           DateTime @updatedAt @map("updated_at") @db.Timestamp(6)
+  deletedAt           DateTime? @map("deleted_at") @db.Timestamp(6)
+
+  template   TestTemplate   @relation(fields: [templateId], references: [id])
+  user       User           @relation(fields: [userId], references: [id])
+  tenant     Tenant         @relation(fields: [tenantId], references: [id])
+  responses  TestResponse[]
+
+  @@map("test_sessions")
+}
+
+model TestResponse {
+  id            String   @id @default(uuid()) @db.VarChar(36)
+  sessionId     String   @map("session_id") @db.VarChar(36)
+  questionId    String   @map("question_id") @db.VarChar(36)
+  sectionId     String   @map("section_id") @db.VarChar(36)
+  responseValue String?  @map("response_value") @db.Clob
+  status        String   @default("NOT_VISITED") @db.VarChar(50)
+  timeSpentSec  Int      @default(0) @map("time_spent_sec")
+  isCorrect    Boolean  @default(false) @map("is_correct")
+  marksAwarded  Decimal  @default(0) @map("marks_awarded") @db.Decimal(5, 2)
+  visitedAt     DateTime? @map("visited_at") @db.Timestamp(6)
+  answeredAt    DateTime? @map("answered_at") @db.Timestamp(6)
+  createdAt     DateTime @default(now()) @map("created_at") @db.Timestamp(6)
+
+  session       TestSession   @relation(fields: [sessionId], references: [id])
+  question      Question      @relation(fields: [questionId], references: [id])
+  section       TestSection   @relation(fields: [sectionId], references: [id])
+
+  @@map("test_responses")
+}
+
+// 5. Practice & Analytics
+model PracticeSession {
+  id            String   @id @default(uuid()) @db.VarChar(36)
+  userId        String   @map("user_id") @db.VarChar(36)
+  tenantId      String   @map("tenant_id") @db.VarChar(36)
+  type          String   @db.VarChar(50)
+  targetTopicId String?  @map("target_topic_id") @db.VarChar(36)
+  startedAt     DateTime @default(now()) @map("started_at") @db.Timestamp(6)
+  endedAt       DateTime? @map("ended_at") @db.Timestamp(6)
+  createdAt     DateTime @default(now()) @map("created_at") @db.Timestamp(6)
+
+  user          User             @relation(fields: [userId], references: [id])
+  tenant        Tenant           @relation(fields: [tenantId], references: [id])
+  responses     PracticeResponse[]
+
+  @@map("practice_sessions")
+}
+
+model PracticeResponse {
+  id                 String   @id @default(uuid()) @db.VarChar(36)
+  sessionId          String   @map("session_id") @db.VarChar(36)
+  questionId         String   @map("question_id") @db.VarChar(36)
+  responseValue      String?  @map("response_value") @db.Clob
+  isCorrect          Boolean  @default(false) @map("is_correct")
+  timeSpentSec       Int      @map("time_spent_sec")
+  hintUsed           Boolean  @default(false) @map("hint_used")
+  explanationViewed  Boolean  @default(false) @map("explanation_viewed")
+  createdAt          DateTime @default(now()) @map("created_at") @db.Timestamp(6)
+
+  session            PracticeSession @relation(fields: [sessionId], references: [id])
+  question           Question        @relation(fields: [questionId], references: [id])
+
+  @@map("practice_responses")
+}
+
+model AnalyticsSnapshot {
+  id          String   @id @default(uuid()) @db.VarChar(36)
+  userId      String   @map("user_id") @db.VarChar(36)
+  tenantId    String   @map("tenant_id") @db.VarChar(36)
+  periodType  String   @map("period_type") @db.VarChar(20)
+  periodStart DateTime @map("period_start") @db.Timestamp(6)
+  periodEnd   DateTime @map("period_end") @db.Timestamp(6)
+  metrics     Json?
+  createdAt   DateTime @default(now()) @map("created_at") @db.Timestamp(6)
+
+  user        User     @relation(fields: [userId], references: [id])
+  tenant      Tenant   @relation(fields: [tenantId], references: [id])
+
+  @@map("analytics_snapshots")
+}
+
+model WeakTopic {
+  id              String   @id @default(uuid()) @db.VarChar(36)
+  userId          String   @map("user_id") @db.VarChar(36)
+  tenantId        String   @map("tenant_id") @db.VarChar(36)
+  topicId         String   @map("topic_id") @db.VarChar(36)
+  weaknessScore   Decimal  @map("weakness_score") @db.Decimal(5, 2)
+  lastAssessedAt  DateTime @map("last_assessed_at") @db.Timestamp(6)
+  createdAt       DateTime @default(now()) @map("created_at") @db.Timestamp(6)
+  updatedAt       DateTime @updatedAt @map("updated_at") @db.Timestamp(6)
+
+  user            User     @relation(fields: [userId], references: [id])
+  tenant          Tenant   @relation(fields: [tenantId], references: [id])
+  topic           Topic    @relation(fields: [topicId], references: [id])
+
+  @@map("weak_topics")
+}
+
+model RankPrediction {
+  id                  String   @id @default(uuid()) @db.VarChar(36)
+  userId              String   @map("user_id") @db.VarChar(36)
+  examId              String   @map("exam_id") @db.VarChar(36)
+  predictedRank       Int      @map("predicted_rank")
+  predictedPercentile Decimal  @map("predicted_percentile") @db.Decimal(5, 2)
+  computedAt          DateTime @default(now()) @map("computed_at") @db.Timestamp(6)
+  modelVersion        String   @map("model_version") @db.VarChar(20)
+
+  exam                Exam     @relation(fields: [examId], references: [id])
+
+  @@map("rank_predictions")
+}
+
+// 6. AI, Doubt, Subscription, Notification, Institute
+model AiConversation {
+  id        String   @id @default(uuid()) @db.VarChar(36)
+  userId    String   @map("user_id") @db.VarChar(36)
+  tenantId  String   @map("tenant_id") @db.VarChar(36)
+  type      String   @db.VarChar(50)
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamp(6)
+
+  user      User     @relation(fields: [userId], references: [id])
+  messages  AiMessage[]
+
+  @@map("ai_conversations")
+}
+
+model AiMessage {
+  id              String   @id @default(uuid()) @db.VarChar(36)
+  conversationId  String   @map("conversation_id") @db.VarChar(36)
+  role            String   @db.VarChar(20)
+  content         String   @db.Clob
+  provider        String   @db.VarChar(50)
+  tokensIn        Int?     @map("tokens_in")
+  tokensOut       Int?     @map("tokens_out")
+  costInr         Decimal? @map("cost_inr") @db.Decimal(10, 4)
+  latencyMs       Int?     @map("latency_ms")
+  createdAt       DateTime @default(now()) @map("created_at") @db.Timestamp(6)
+
+  conversation    AiConversation @relation(fields: [conversationId], references: [id])
+
+  @@map("ai_messages")
+}
+
+model Doubt {
+  id         String   @id @default(uuid()) @db.VarChar(36)
+  userId     String   @map("user_id") @db.VarChar(36)
+  tenantId   String   @map("tenant_id") @db.VarChar(36)
+  questionId String?  @map("question_id") @db.VarChar(36)
+  title      String   @db.VarChar(255)
+  body       String   @db.Clob
+  status     String   @default("OPEN") @db.VarChar(50)
+  priority   String   @default("MEDIUM") @db.VarChar(20)
+  createdAt  DateTime @default(now()) @map("created_at") @db.Timestamp(6)
+  updatedAt  DateTime @updatedAt @map("updated_at") @db.Timestamp(6)
+
+  user       User             @relation(fields: [userId], references: [id])
+  tenant     Tenant           @relation(fields: [tenantId], references: [id])
+  responses  DoubtResponse[]
+
+  @@map("doubts")
+}
+
+model DoubtResponse {
+  id        String   @id @default(uuid()) @db.VarChar(36)
+  doubtId   String   @map("doubt_id") @db.VarChar(36)
+  authorId  String   @map("author_id") @db.VarChar(36)
+  body      String   @db.Clob
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamp(6)
+
+  doubt     Doubt    @relation(fields: [doubtId], references: [id])
+  author    User     @relation(fields: [authorId], references: [id])
+
+  @@map("doubt_responses")
+}
+
+model Plan {
+  id           String   @id @default(uuid()) @db.VarChar(36)
+  code         String   @db.VarChar(50)
+  name         String   @db.VarChar(100)
+  priceInr     Decimal  @map("price_inr") @db.Decimal(10, 2)
+  billingCycle String   @map("billing_cycle") @db.VarChar(20)
+  features     Json?
+  isActive     Boolean  @default(true) @map("is_active")
+
+  subscriptions Subscription[]
+
+  @@map("plans")
+}
+
+model Subscription {
+  id         String    @id @default(uuid()) @db.VarChar(36)
+  userId     String    @map("user_id") @db.VarChar(36)
+  tenantId   String    @map("tenant_id") @db.VarChar(36)
+  planId     String    @map("plan_id") @db.VarChar(36)
+  status     String    @db.VarChar(50)
+  startedAt  DateTime  @map("started_at") @db.Timestamp(6)
+  endsAt     DateTime? @map("ends_at") @db.Timestamp(6)
+  cancelledAt DateTime? @map("cancelled_at") @db.Timestamp(6)
+  createdAt  DateTime  @default(now()) @map("created_at") @db.Timestamp(6)
+  updatedAt  DateTime  @updatedAt @map("updated_at") @db.Timestamp(6)
+
+  user       User      @relation(fields: [userId], references: [id])
+  tenant     Tenant    @relation(fields: [tenantId], references: [id])
+  plan       Plan      @relation(fields: [planId], references: [id])
+
+  @@map("subscriptions")
+}
+
+model FeatureFlag {
+  id              String   @id @default(uuid()) @db.VarChar(36)
+  key             String   @unique @db.VarChar(100)
+  description     String?  @db.VarChar(500)
+  defaultEnabled  Boolean  @default(false) @map("default_enabled")
+  createdAt       DateTime @default(now()) @map("created_at") @db.Timestamp(6)
+  updatedAt       DateTime @updatedAt @map("updated_at") @db.Timestamp(6)
+
+  overrides       TenantFeatureOverride[]
+
+  @@map("feature_flags")
+}
+
+model TenantFeatureOverride {
+  tenantId String @map("tenant_id") @db.VarChar(36)
+  flagId   String @map("flag_id") @db.VarChar(36)
+  enabled  Boolean @default(false)
+
+  tenant   Tenant       @relation(fields: [tenantId], references: [id])
+  flag     FeatureFlag  @relation(fields: [flagId], references: [id])
+
+  @@id([tenantId, flagId])
+  @@map("tenant_feature_overrides")
+}
+
+model UsageRecord {
+  id         String   @id @default(uuid()) @db.VarChar(36)
+  userId     String   @map("user_id") @db.VarChar(36)
+  tenantId   String   @map("tenant_id") @db.VarChar(36)
+  metric     String   @db.VarChar(50)
+  period     String   @db.VarChar(20)
+  count      Int      @default(0)
+  limit      Int      @default(0)
+  createdAt  DateTime @default(now()) @map("created_at") @db.Timestamp(6)
+  updatedAt  DateTime @updatedAt @map("updated_at") @db.Timestamp(6)
+
+  user       User     @relation(fields: [userId], references: [id])
+  tenant     Tenant   @relation(fields: [tenantId], references: [id])
+
+  @@unique([userId, metric, period])
+  @@map("usage_records")
+}
+
+model Notification {
+  id        String    @id @default(uuid()) @db.VarChar(36)
+  userId    String    @map("user_id") @db.VarChar(36)
+  tenantId  String    @map("tenant_id") @db.VarChar(36)
+  type      String    @db.VarChar(50)
+  title     String    @db.VarChar(255)
+  body      String?   @db.Clob
+  payload   Json?
+  channel   String    @default("IN_APP") @db.VarChar(20)
+  status    String    @default("UNREAD") @db.VarChar(20)
+  readAt    DateTime? @map("read_at") @db.Timestamp(6)
+  createdAt DateTime  @default(now()) @map("created_at") @db.Timestamp(6)
+
+  user      User      @relation(fields: [userId], references: [id])
+  tenant    Tenant    @relation(fields: [tenantId], references: [id])
+
+  @@map("notifications")
+}
+
+model NotificationPreference {
+  userId     String   @map("user_id") @db.VarChar(36)
+  channel    String   @db.VarChar(20)
+  type       String   @db.VarChar(50)
+  enabled    Boolean  @default(true)
+
+  user       User     @relation(fields: [userId], references: [id])
+
+  @@id([userId, channel, type])
+  @@map("notification_preferences")
+}
+
+model Batch {
+  id          String   @id @default(uuid()) @db.VarChar(36)
+  tenantId    String   @map("tenant_id") @db.VarChar(36)
+  name        String   @db.VarChar(255)
+  description String?  @db.Clob
+  createdAt   DateTime @default(now()) @map("created_at") @db.Timestamp(6)
+  updatedAt   DateTime @updatedAt @map("updated_at") @db.Timestamp(6)
+  deletedAt   DateTime? @map("deleted_at") @db.Timestamp(6)
+
+  tenant      Tenant   @relation(fields: [tenantId], references: [id])
+  enrollments BatchEnrollment[]
+
+  @@map("batches")
+}
+
+model BatchEnrollment {
+  batchId    String   @map("batch_id") @db.VarChar(36)
+  userId     String   @map("user_id") @db.VarChar(36)
+  enrolledAt DateTime @default(now()) @map("enrolled_at") @db.Timestamp(6)
+
+  batch      Batch    @relation(fields: [batchId], references: [id])
+  user       User     @relation(fields: [userId], references: [id])
+
+  @@id([batchId, userId])
+  @@map("batch_enrollments")
+}
+
+// 7. Audit & Events
+model AuditLog {
+  id           String   @id @default(uuid()) @db.VarChar(36)
+  tenantId     String?  @map("tenant_id") @db.VarChar(36)
+  actorId      String?  @map("actor_id") @db.VarChar(36)
+  action       String   @db.VarChar(100)
+  resourceType String   @map("resource_type") @db.VarChar(100)
+  resourceId   String?  @map("resource_id") @db.VarChar(36)
+  beforeState  String?  @map("before_state") @db.Clob
+  afterState   String?  @map("after_state") @db.Clob
+  ipAddress    String?  @map("ip_address") @db.VarChar(45)
+  userAgent    String?  @map("user_agent") @db.VarChar(500)
+  createdAt    DateTime @default(now()) @map("created_at") @db.Timestamp(6)
+
+  @@map("audit_logs")
+}
+
+model DomainEvent {
+  id         String    @id @default(uuid()) @db.VarChar(36)
+  tenantId   String?   @map("tenant_id") @db.VarChar(36)
+  type       String    @db.VarChar(100)
+  payload    Json?
+  occurredAt DateTime  @default(now()) @map("occurred_at") @db.Timestamp(6)
+  processedAt DateTime? @map("processed_at") @db.Timestamp(6)
+
+  @@map("domain_events")
+}

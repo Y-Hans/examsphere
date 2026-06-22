@@ -1,0 +1,80 @@
+name: CI Pipeline
+
+on:
+  pull_request:
+    branches: [ main, develop ]
+  push:
+    branches: [ main, develop ]
+
+jobs:
+  quality-assurance:
+    name: Lint, Test, and Build
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Install pnpm
+        uses: pnpm/action-setup@v3
+        with:
+          version: 9
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Generate Prisma Client
+        run: pnpm prisma generate
+        env:
+          DATABASE_URL: "oracle://fake:fake@localhost:1521/fake"
+          AUTH_SECRET: "github_actions_secret_for_build_at_least_32_chars_long"
+          CRON_SECRET: "github_cron_secret_16c"
+
+      - name: Run Linter
+        run: pnpm lint
+        env:
+          DATABASE_URL: "oracle://fake:fake@localhost:1521/fake"
+          AUTH_SECRET: "github_actions_secret_for_build_at_least_32_chars_long"
+          CRON_SECRET: "github_cron_secret_16c"
+
+      - name: Type Check
+        run: pnpm typecheck
+        env:
+          DATABASE_URL: "oracle://fake:fake@localhost:1521/fake"
+          AUTH_SECRET: "github_actions_secret_for_build_at_least_32_chars_long"
+          CRON_SECRET: "github_cron_secret_16c"
+
+      - name: Run Unit Tests
+        run: pnpm test -- --coverage
+        env:
+          DATABASE_URL: "oracle://fake:fake@localhost:1521/fake"
+          AUTH_SECRET: "github_actions_secret_for_build_at_least_32_chars_long"
+          CRON_SECRET: "github_cron_secret_16c"
+
+      - name: Build Application
+        run: pnpm build
+        env:
+          DATABASE_URL: "oracle://fake:fake@localhost:1521/fake"
+          AUTH_SECRET: "github_actions_secret_for_build_at_least_32_chars_long"
+          CRON_SECRET: "github_cron_secret_16c"
+          NEXT_PUBLIC_APP_URL: "http://localhost:3000"
+          NEXT_PUBLIC_API_URL: "http://localhost:3000/api/v1"
+
+      - name: Security Audit
+        run: pnpm audit --audit-level=high
+        continue-on-error: true
+
+      - name: Install Playwright Browsers
+        run: npx playwright install --with-deps chromium
+
+      - name: Run E2E Tests
+        run: pnpm playwright:test --project=chromium
+        env:
+          DATABASE_URL: "oracle://fake:fake@localhost:1521/fake"
+          AUTH_SECRET: "github_actions_secret_for_build_at_least_32_chars_long"
+          CRON_SECRET: "github_cron_secret_16c"

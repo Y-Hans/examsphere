@@ -1,0 +1,28 @@
+version: '3.8'
+
+services:
+  app:
+    build:
+      context: ../..
+      dockerfile: infra/docker/Dockerfile.dev
+    ports:
+      - "3000:3000"
+    volumes:
+      - ../..:/app
+      - /app/node_modules
+      - /app/.next
+    environment:
+      - NODE_ENV=development
+      - DATABASE_URL=oracle://user:pass@host:port/service_name
+      - AUTH_SECRET=local_dev_secret_at_least_32_chars_long
+    command: pnpm dev
+
+  # Optional: Local Oracle XE for development if not using Autonomous DB
+  # oracle-db:
+  #   image: gvenzl/oracle-xe:21-slim
+  #   ports:
+  #     - "1521:1521"
+  #   environment:
+  #     - ORACLE_PASSWORD=oracle
+  #   volumes:
+  #     - oracle-data:/opt/oracle/oradata
